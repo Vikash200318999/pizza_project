@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #002d62;
+  --color-brand-gold: #c5a044;
+  --color-brand-red: #d71921;
+}
+
+/* Ensure dark mode works with the .dark class */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #fdfaf5;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-border: #e2e8f0;
+  --muted: #f1f5f9;
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-border: #1e293b;
+  --muted: #1e293b;
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    position: relative;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* 
+     High-End "Gear" Style Themed Background 
+     Featuring large, overlapping, professional pizza-themed watermarks.
+  */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    pointer-events: none;
+
+    background-color: var(--background);
+
+    /* 
+       Multiple layers of large, recognizable watermarks. 
+       These are positioned to overlap and create a structured design.
+    */
+    background-image:
+      /* Large Pizza Slices (Structural) */
+      url("data:image/svg+xml,%3Csvg width='500' height='500' viewBox='0 0 500 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M250 50 L450 400 A200 200 0 0 1 50 400 Z' fill='%23c5a044' fill-opacity='0.18'/%3E%3C/svg%3E"),
+      /* Big Rolling Pins (Directional) */
+      url("data:image/svg+xml,%3Csvg width='400' height='400' viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='50' y='180' width='300' height='40' rx='20' fill='%23002d62' fill-opacity='0.12'/%3E%3Crect x='20' y='190' width='40' height='20' rx='5' fill='%23c5a044' fill-opacity='0.1'/%3E%3Crect x='340' y='190' width='40' height='20' rx='5' fill='%23c5a044' fill-opacity='0.1'/%3E%3C/svg%3E"),
+      /* Large Concentric Circles (Like Pizza Dough) */
+      url("data:image/svg+xml,%3Csvg width='600' height='600' viewBox='0 0 600 600' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='300' cy='300' r='250' fill='none' stroke='%23d71921' stroke-opacity='0.08' stroke-width='40'/%3E%3Ccircle cx='300' cy='300' r='180' fill='none' stroke='%23c5a044' stroke-opacity='0.05' stroke-width='20'/%3E%3C/svg%3E"),
+      /* Fine Pattern Overlay */
+      url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23002d62' fill-opacity='0.05'%3E%3Crect x='10' y='10' width='4' height='4' rx='2'/%3E%3Crect x='60' y='40' width='6' height='2' rx='1'/%3E%3Ccircle cx='80' cy='80' r='2'/%3E%3C/g%3E%3C/svg%3E");
+
+    background-position:
+      -100px -100px,
+      85% 70%,
+      110% -150px,
+      center;
+    background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+    background-size: 800px 800px, 600px 600px, 1000px 1000px, 250px 250px;
+
+    transition: background-image 0.5s ease;
+  }
+
+  .dark body::before {
+    background-image:
+      url("data:image/svg+xml,%3Csvg width='500' height='500' viewBox='0 0 500 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M250 50 L450 400 A200 200 0 0 1 50 400 Z' fill='%23c5a044' fill-opacity='0.3'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg width='400' height='400' viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='50' y='180' width='300' height='40' rx='20' fill='%23ffffff' fill-opacity='0.08'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg width='600' height='600' viewBox='0 0 600 600' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='300' cy='300' r='250' fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='40'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='20' cy='20' r='1'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* Transparent sections to allow motifs to show through */
+  main,
+  section,
+  #menu {
+    background-color: transparent !important;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply backdrop-blur-xl border shadow-2xl;
+    background-color: rgba(255, 255, 255, 0.5) !important;
+    border-color: rgba(0, 45, 98, 0.08) !important;
+    @apply dark:bg-slate-900/30 dark:border-white/5;
+  }
+
+  /* Making cards slightly more premium and transparent to integrate with background */
+  .card {
+    background-color: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    @apply rounded-[2.5rem] shadow-xl transition-all duration-700 overflow-hidden;
+    @apply dark:bg-slate-900/75 dark:border-white/10;
+  }
+
+  .card:hover {
+    @apply -translate-y-4 shadow-2xl;
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+}
