@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
 import Menu from '@/components/Menu';
 import Footer from '@/components/Footer';
+import AuthModal from '@/components/AuthModal';
 import { MenuItem } from '@/data/menu';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, ShoppingBag, Plus, Minus, Trash2, CheckCircle2, Clock,
-  CreditCard, Banknote, AlertCircle, ExternalLink
+  CreditCard, Banknote, AlertCircle, ExternalLink, MapPin, Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -22,26 +23,52 @@ interface CartItem {
   image: string;
 }
 
+interface UserProfile {
+  name: string;
+  phone: string;
+}
+
 type CartStep = 'cart' | 'details' | 'payment' | 'success' | 'expired';
 
-const PAYMENT_SECONDS = 120; // 2 minutes
+const PAYMENT_SECONDS = 120;
 
 export default function Home() {
-  const [cart, setCart] = React.useState<CartItem[]>([]);
-  const [isCartOpen, setIsCartOpen] = React.useState(false);
-  const [cartStep, setCartStep] = React.useState<CartStep>('cart');
-  const [paymentMethod, setPaymentMethod] = React.useState<'qr' | 'cod'>('qr');
-  const [customer, setCustomer] = React.useState({ name: '', phone: '', address: '' });
-  const [timeLeft, setTimeLeft] = React.useState(PAYMENT_SECONDS);
-  const [isSaving, setIsSaving] = React.useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [cartStep, setCartStep] = useState<CartStep>('cart');
+  const [paymentMethod, setPaymentMethod] = useState<'qr' | 'cod'>('qr');
+  const [customer, setCustomer] = useState({ name: '', phone: '', address: '' });
+  const [timeLeft, setTimeLeft] = useState(PAYMENT_SECONDS);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  React.useEffect(() => {
+  // Load user from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('user_profile');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as UserProfile;
+        setUser(parsed);
+        setCustomer(prev => ({ ...prev, name: parsed.name, phone: parsed.phone }));
+      } catch {}
+    }
+    setAuthLoaded(true);
+  }, []);
+
+  const handleLogin = (profile: UserProfile) => {
+    setUser(profile);
+    setCustomer(prev => ({ ...prev, name: profile.name, phone: profile.phone }));
+  };
+
+  useEffect(() => {
     if (!isCartOpen) setCartStep('cart');
   }, [isCartOpen]);
 
   // Countdown timer
-  React.useEffect(() => {
+  useEffect(() => {
     if (cartStep === 'payment' && paymentMethod === 'qr') {
       setTimeLeft(PAYMENT_SECONDS);
       timerRef.current = setInterval(() => {
@@ -57,6 +84,51 @@ export default function Home() {
       return () => clearInterval(timerRef.current!);
     }
   }, [cartStep, paymentMethod]);
+
+  // GPS location detection
+  const detectLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+          );
+          const data = await res.json();
+          const addr = data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          // Clean up - use the most useful parts
+          const parts = [
+            data.address?.road,
+            data.address?.neighbourhood || data.address?.suburb,
+            data.address?.city || data.address?.town || data.address?.village,
+            data.address?.state,
+            data.address?.postcode,
+          ].filter(Boolean);
+          setCustomer(prev => ({
+            ...prev,
+            address: parts.length > 0 ? parts.join(', ') : addr,
+          }));
+        } catch {
+          setCustomer(prev => ({
+            ...prev,
+            address: `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
+          }));
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      () => {
+        alert('Could not detect your location. Please enter manually.');
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, []);
 
   const addToCart = (item: MenuItem, size: string) => {
     setCart(prev => {
@@ -97,7 +169,6 @@ export default function Home() {
 
   const saveOrder = useCallback(async (method: 'qr' | 'cod') => {
     setIsSaving(true);
-    // persist phone for tracking page
     localStorage.setItem('last_order_phone', customer.phone);
     try {
       await fetch('/api/orders', {
@@ -119,11 +190,18 @@ export default function Home() {
     }
   }, [cart, customer, finalTotal]);
 
+  const buildWhatsAppMsg = (method: string) => {
+    return `*Order from Delicious Pizza (${method})*%0A%0A` +
+      cart.map(item => `- ${item.name} (${item.size}) ×${item.quantity} = ₹${item.price * item.quantity}`).join('%0A') +
+      `%0A%0A*Subtotal: ₹${cartTotal}*` +
+      (discount > 0 ? `%0A*Discount (20%): - ₹${discount.toFixed(0)}*` : '') +
+      `%0A*Final Total: ₹${finalTotal}*%0A%0A*Name:* ${customer.name}%0A*Phone:* ${customer.phone}%0A*Address:* ${customer.address}`;
+  };
+
   const handlePaid = async () => {
     clearInterval(timerRef.current!);
     await saveOrder('qr');
     setCartStep('success');
-    // Also ping WhatsApp
     const msg = buildWhatsAppMsg('UPI / QR');
     setTimeout(() => { window.open(`https://wa.me/917047237888?text=${msg}`, '_blank'); setCart([]); }, 1500);
   };
@@ -135,19 +213,16 @@ export default function Home() {
     setTimeout(() => { window.open(`https://wa.me/917047237888?text=${msg}`, '_blank'); setCart([]); }, 1500);
   };
 
-  const buildWhatsAppMsg = (method: string) => {
-    return `*Order from Delicious Pizza (${method})*%0A%0A` +
-      cart.map(item => `- ${item.name} (${item.size}) ×${item.quantity} = ₹${item.price * item.quantity}`).join('%0A') +
-      `%0A%0A*Subtotal: ₹${cartTotal}*` +
-      (discount > 0 ? `%0A*Discount (20%): - ₹${discount.toFixed(0)}*` : '') +
-      `%0A*Final Total: ₹${finalTotal}*%0A%0A*Name:* ${customer.name}%0A*Phone:* ${customer.phone}%0A*Address:* ${customer.address}`;
-  };
-
-  // Dynamic UPI QR URL
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(`upi://pay?pa=vikasg9987@oksbi&pn=Vikas%20Gaud&am=${finalTotal}&cu=INR&tn=DeliciousPizza`)}`;
+
+  // Don't render until we know auth status
+  if (!authLoaded) return null;
 
   return (
     <main className="min-h-screen selection:bg-brand-blue selection:text-white relative bg-transparent">
+      {/* Login gate */}
+      {!user && <AuthModal onLogin={handleLogin} />}
+
       <Navbar cartCount={cartCount} onCartClick={() => setIsCartOpen(true)} />
       <Hero />
       <Menu onAddToCart={addToCart} />
@@ -219,17 +294,49 @@ export default function Home() {
                 {/* STEP: Delivery Details */}
                 {cartStep === 'details' && (
                   <div className="p-6 space-y-5">
-                    <p className="text-sm text-gray-500">Please fill in your details below.</p>
+                    <p className="text-sm text-gray-500">Confirm your details below.</p>
                     <div className="space-y-4">
-                      <input type="text" placeholder="Full Name *" value={customer.name}
+                      <input
+                        type="text"
+                        placeholder="Full Name *"
+                        value={customer.name}
                         onChange={e => setCustomer({ ...customer, name: e.target.value })}
-                        className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:outline-none focus:border-brand-blue" />
-                      <input type="tel" placeholder="Phone Number *" value={customer.phone}
+                        className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:outline-none focus:border-brand-blue"
+                      />
+                      <input
+                        type="tel"
+                        placeholder="Phone Number *"
+                        value={customer.phone}
                         onChange={e => setCustomer({ ...customer, phone: e.target.value })}
-                        className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:outline-none focus:border-brand-blue" />
-                      <textarea placeholder="Full Delivery Address *" value={customer.address}
-                        onChange={e => setCustomer({ ...customer, address: e.target.value })}
-                        className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 h-24 focus:outline-none focus:border-brand-blue" />
+                        className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:outline-none focus:border-brand-blue"
+                      />
+                      {/* Address with auto-detect */}
+                      <div className="relative">
+                        <textarea
+                          placeholder="Full Delivery Address *"
+                          value={customer.address}
+                          onChange={e => setCustomer({ ...customer, address: e.target.value })}
+                          className="w-full p-3 pr-10 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 h-24 focus:outline-none focus:border-brand-blue"
+                        />
+                        <button
+                          onClick={detectLocation}
+                          disabled={isLocating}
+                          title="Auto-detect my location"
+                          className="absolute top-2 right-2 p-1.5 bg-brand-blue text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                          {isLocating ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                        </button>
+                      </div>
+                      {!customer.address && (
+                        <button
+                          onClick={detectLocation}
+                          disabled={isLocating}
+                          className="w-full py-2.5 border-2 border-dashed border-brand-blue/30 text-brand-blue font-bold text-sm rounded-xl hover:border-brand-blue hover:bg-brand-blue/5 transition-all flex items-center justify-center gap-2"
+                        >
+                          {isLocating ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                          {isLocating ? 'Detecting your location…' : '📍 Auto-detect my location'}
+                        </button>
+                      )}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-600 mb-3">Payment Method</p>
@@ -252,7 +359,6 @@ export default function Home() {
                 {/* STEP: QR Payment */}
                 {cartStep === 'payment' && paymentMethod === 'qr' && (
                   <div className="p-6 flex flex-col items-center text-center space-y-4">
-                    {/* Circular Timer */}
                     <div className="relative w-24 h-24">
                       <svg className="w-24 h-24 -rotate-90" viewBox="0 0 96 96">
                         <circle cx="48" cy="48" r="42" fill="none" stroke="#e5e7eb" strokeWidth="8" />
@@ -268,7 +374,6 @@ export default function Home() {
                     </div>
                     <p className="text-sm font-bold text-gray-500 flex items-center gap-1"><Clock size={14} /> Pay within 2 minutes</p>
 
-                    {/* QR Code */}
                     <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-100">
                       <img src={qrUrl} alt="UPI QR Code" className="w-[220px] h-[220px]" />
                     </div>
@@ -280,18 +385,18 @@ export default function Home() {
                       <p className="text-sm text-gray-500">Name: <span className="font-bold text-gray-800 dark:text-white">Vikas Gaud</span></p>
                     </div>
 
-                    <p className="text-sm text-gray-400">Open any UPI app (Google Pay, PhonePe, Paytm) → Scan QR → Pay → Come back and click below.</p>
+                    <p className="text-sm text-gray-400">Open any UPI app → Scan QR → Pay → Click below.</p>
                   </div>
                 )}
 
-                {/* STEP: COD confirmation */}
+                {/* STEP: COD Confirmation */}
                 {cartStep === 'payment' && paymentMethod === 'cod' && (
                   <div className="p-6 space-y-4">
                     <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
                       <Banknote size={40} className="text-yellow-600 mx-auto mb-2" />
                       <p className="font-black text-yellow-700 text-lg">Cash on Delivery</p>
                       <p className="text-2xl font-black text-brand-blue mt-1">₹{finalTotal}</p>
-                      <p className="text-sm text-gray-500 mt-2">Please keep the exact change ready for the delivery person.</p>
+                      <p className="text-sm text-gray-500 mt-2">Keep exact change ready for the delivery person.</p>
                     </div>
                     <div className="bg-gray-50 dark:bg-slate-800 rounded-xl p-4 space-y-1 text-sm">
                       <p><span className="font-bold text-gray-500">Name:</span> {customer.name}</p>
@@ -323,7 +428,7 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* STEP: Timer expired */}
+                {/* STEP: Timer Expired */}
                 {cartStep === 'expired' && (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
                     <AlertCircle size={80} className="text-brand-red" />
@@ -334,7 +439,7 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Footer Actions */}
+              {/* Footer */}
               <div className="shrink-0 p-6 border-t dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
                 {cartStep === 'cart' && cart.length > 0 && (
                   <>
@@ -359,7 +464,6 @@ export default function Home() {
                     <button onClick={() => setCartStep('details')} className="w-full btn-primary py-4 text-lg">Proceed to Checkout →</button>
                   </>
                 )}
-
                 {cartStep === 'details' && (
                   <div className="space-y-2">
                     <div className="flex justify-between font-black text-brand-blue text-lg"><span>Total</span><span>₹{finalTotal}</span></div>
@@ -369,14 +473,12 @@ export default function Home() {
                     <button onClick={() => setCartStep('cart')} className="w-full py-2 text-sm font-bold text-gray-400 hover:text-brand-blue transition-colors">← Back to Cart</button>
                   </div>
                 )}
-
                 {cartStep === 'payment' && paymentMethod === 'qr' && (
                   <button onClick={handlePaid} disabled={isSaving}
                     className="w-full bg-green-500 hover:bg-green-600 text-white font-black py-4 rounded-xl text-lg transition-colors disabled:opacity-50">
                     {isSaving ? 'Saving order...' : "✅ I've Paid!"}
                   </button>
                 )}
-
                 {cartStep === 'payment' && paymentMethod === 'cod' && (
                   <div className="space-y-2">
                     <button onClick={handleCOD} disabled={isSaving}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Pizza, CheckCircle2, Clock, Truck, PartyPopper, ChevronRight, Phone, MapPin, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
@@ -19,11 +19,11 @@ interface Order {
 }
 
 const STEPS = [
-  { key: 'placed',           icon: CheckCircle2,   label: 'Order Placed',       desc: 'We received your order!' },
-  { key: 'confirmed',        icon: CheckCircle2,   label: 'Confirmed',           desc: 'Kitchen confirmed your order.' },
-  { key: 'preparing',        icon: Pizza,          label: 'Being Prepared',      desc: 'Our chefs are cooking for you!' },
-  { key: 'out_for_delivery', icon: Truck,          label: 'Out for Delivery',    desc: 'Your order is on the way!' },
-  { key: 'delivered',        icon: PartyPopper,    label: 'Delivered!',          desc: 'Enjoy your meal! 🎉' },
+  { key: 'placed',           icon: CheckCircle2, label: 'Order Placed',    desc: 'We received your order!' },
+  { key: 'confirmed',        icon: CheckCircle2, label: 'Confirmed',        desc: 'Kitchen confirmed your order.' },
+  { key: 'preparing',        icon: Pizza,        label: 'Being Prepared',   desc: 'Our chefs are cooking for you!' },
+  { key: 'out_for_delivery', icon: Truck,        label: 'Out for Delivery', desc: 'Your order is on the way!' },
+  { key: 'delivered',        icon: PartyPopper,  label: 'Delivered!',       desc: 'Enjoy your meal! 🎉' },
 ];
 
 const STATUS_INDEX: Record<string, number> = {
@@ -40,16 +40,9 @@ export default function TrackPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [searched, setSearched] = useState(false);
+  const autoSearched = useRef(false);
 
-  // auto-load from localStorage if redirected from checkout
-  useEffect(() => {
-    const saved = localStorage.getItem('last_order_phone');
-    if (saved) { setPhone(saved); }
-  }, []);
-
-  const fetchOrder = useCallback(async (ph?: string) => {
-    const searchPhone = ph || phone;
+  const fetchOrder = useCallback(async (searchPhone: string) => {
     if (!searchPhone.trim()) return;
     setLoading(true);
     setError('');
@@ -62,33 +55,33 @@ export default function TrackPage() {
       const data = await res.json();
       if (data.order) {
         setOrder(data.order);
-        setSearched(true);
       } else {
         setOrder(null);
         setError('No order found for this phone number. Double-check and try again.');
-        setSearched(true);
       }
     } catch {
       setError('Could not connect. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [phone]);
+  }, []);
 
-  // Auto-search if redirected with phone
+  // On mount: load saved phone and auto-search ONCE
   useEffect(() => {
     const saved = localStorage.getItem('last_order_phone');
-    if (saved && !searched) {
+    if (saved && !autoSearched.current) {
+      autoSearched.current = true;
+      setPhone(saved);
       fetchOrder(saved);
     }
-  }, [fetchOrder, searched]);
+  }, [fetchOrder]);
 
-  // Auto-refresh every 15 seconds while order is active
+  // Auto-refresh every 15 seconds while active order is showing
   useEffect(() => {
-    if (!order || order.status === 'delivered') return;
-    const timer = setInterval(() => fetchOrder(), 15000);
+    if (!order || order.status === 'delivered' || !phone) return;
+    const timer = setInterval(() => fetchOrder(phone), 15000);
     return () => clearInterval(timer);
-  }, [order, fetchOrder]);
+  }, [order, phone, fetchOrder]);
 
   const stepIndex = order ? (STATUS_INDEX[order.status] ?? 0) : -1;
 
@@ -114,11 +107,11 @@ export default function TrackPage() {
               placeholder="e.g. 9876543210"
               value={phone}
               onChange={e => setPhone(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && fetchOrder()}
+              onKeyDown={e => e.key === 'Enter' && fetchOrder(phone)}
               className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 focus:outline-none focus:border-brand-blue font-semibold"
             />
             <button
-              onClick={() => fetchOrder()}
+              onClick={() => fetchOrder(phone)}
               disabled={loading}
               className="bg-brand-blue text-white px-6 py-3 rounded-xl font-black flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-60"
             >
@@ -155,7 +148,6 @@ export default function TrackPage() {
                   const Icon = step.icon;
                   return (
                     <div key={step.key} className="flex items-start gap-4">
-                      {/* Icon + line */}
                       <div className="flex flex-col items-center">
                         <motion.div
                           animate={active ? { scale: [1, 1.15, 1] } : {}}
@@ -169,7 +161,6 @@ export default function TrackPage() {
                           <div className={`w-0.5 h-8 mt-1 rounded-full transition-all ${i < stepIndex ? 'bg-brand-blue' : 'bg-gray-200 dark:bg-slate-700'}`} />
                         )}
                       </div>
-                      {/* Text */}
                       <div className="pt-1.5">
                         <p className={`font-black ${done ? 'text-brand-blue' : 'text-gray-400'}`}>{step.label}</p>
                         {active && <p className="text-sm text-gray-500 mt-0.5">{step.desc}</p>}
@@ -186,7 +177,6 @@ export default function TrackPage() {
             {/* Order Details */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-gray-100 dark:border-slate-700 p-6 mb-6">
               <h2 className="font-black text-brand-blue mb-4 text-lg">Order Details</h2>
-              {/* Delivery info */}
               <div className="space-y-2 mb-4 pb-4 border-b dark:border-slate-700 text-sm">
                 <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                   <Phone size={14} className="text-brand-gold shrink-0" />
@@ -197,13 +187,11 @@ export default function TrackPage() {
                   <span>{order.address}</span>
                 </div>
               </div>
-              {/* Items */}
               <div className="space-y-2">
                 {order.cart?.map((item, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-gray-700 dark:text-gray-300">
-                      {item.name}{' '}
-                      <span className="text-gray-400">({item.size}) ×{item.quantity}</span>
+                      {item.name} <span className="text-gray-400">({item.size}) ×{item.quantity}</span>
                     </span>
                     <span className="font-bold text-brand-blue">₹{item.price * item.quantity}</span>
                   </div>
@@ -215,21 +203,13 @@ export default function TrackPage() {
               </div>
             </div>
 
-            {/* CTA */}
             <div className="text-center text-sm text-gray-400 space-y-2">
               <p>Need help? Call us at <a href="tel:7047237888" className="font-bold text-brand-blue underline">7047237888</a></p>
               <Link href="/" className="inline-flex items-center gap-1 text-brand-blue font-bold hover:underline">
-                ← Add More Items <ChevronRight size={14} />
+                ← Back to Menu <ChevronRight size={14} />
               </Link>
             </div>
           </motion.div>
-        )}
-
-        {searched && !order && !error && (
-          <div className="text-center py-10 text-gray-400">
-            <Search size={48} className="mx-auto mb-3 opacity-30" />
-            <p className="font-bold">No orders found.</p>
-          </div>
         )}
       </div>
     </div>

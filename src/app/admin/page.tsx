@@ -52,16 +52,33 @@ export default function AdminPage() {
   const [newCount, setNewCount] = useState(0);
   const audioCtx = useRef<AudioContext | null>(null);
 
+  // Must be called during a user gesture to unlock AudioContext
+  const initAudio = useCallback(() => {
+    try {
+      if (!audioCtx.current) {
+        audioCtx.current = new AudioContext();
+      } else if (audioCtx.current.state === 'suspended') {
+        audioCtx.current.resume();
+      }
+    } catch {}
+  }, []);
+
   const playChime = useCallback(() => {
     try {
-      if (!audioCtx.current) audioCtx.current = new AudioContext();
-      const osc = audioCtx.current.createOscillator();
-      const gain = audioCtx.current.createGain();
-      osc.connect(gain); gain.connect(audioCtx.current.destination);
-      osc.type = 'sine'; osc.frequency.setValueAtTime(880, audioCtx.current.currentTime);
-      gain.gain.setValueAtTime(0.4, audioCtx.current.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.current.currentTime + 0.6);
-      osc.start(); osc.stop(audioCtx.current.currentTime + 0.6);
+      const ctx = audioCtx.current;
+      if (!ctx || ctx.state === 'suspended') return;
+      // Three ascending notes for a pleasant new-order chime
+      [[660, 0], [880, 0.18], [1100, 0.36]].forEach(([freq, when]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + when);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime + when);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + when + 0.3);
+        osc.start(ctx.currentTime + when);
+        osc.stop(ctx.currentTime + when + 0.3);
+      });
     } catch {}
   }, []);
 
@@ -115,10 +132,18 @@ export default function AdminPage() {
           </div>
           <input type="password" placeholder="Admin password" value={password}
             onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && (password === ADMIN_PASSWORD ? (setAuthed(true), setPwError('')) : setPwError('Incorrect password.'))}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                if (password === ADMIN_PASSWORD) { initAudio(); setAuthed(true); setPwError(''); }
+                else setPwError('Incorrect password.');
+              }
+            }}
             className="w-full p-3 rounded-lg border border-gray-200 bg-gray-50 mb-3 focus:outline-none focus:border-brand-blue" />
           {pwError && <p className="text-sm text-red-500 mb-3">{pwError}</p>}
-          <button onClick={() => password === ADMIN_PASSWORD ? (setAuthed(true), setPwError('')) : setPwError('Incorrect password.')}
+          <button onClick={() => {
+              if (password === ADMIN_PASSWORD) { initAudio(); setAuthed(true); setPwError(''); }
+              else setPwError('Incorrect password.');
+            }}
             className="w-full bg-brand-blue text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity">
             Login
           </button>
