@@ -9,8 +9,9 @@ import { MenuItem } from '@/data/menu';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, ShoppingBag, Plus, Minus, Trash2, CheckCircle2, Clock,
-  CreditCard, Banknote, AlertCircle
+  CreditCard, Banknote, AlertCircle, ExternalLink
 } from 'lucide-react';
+import Link from 'next/link';
 
 interface CartItem {
   id: string;
@@ -96,6 +97,8 @@ export default function Home() {
 
   const saveOrder = useCallback(async (method: 'qr' | 'cod') => {
     setIsSaving(true);
+    // persist phone for tracking page
+    localStorage.setItem('last_order_phone', customer.phone);
     try {
       await fetch('/api/orders', {
         method: 'POST',
@@ -313,6 +316,10 @@ export default function Home() {
                       <p className="text-sm text-gray-500">Estimated preparation time</p>
                     </div>
                     <p className="text-sm text-gray-400 max-w-[260px]">Thank you, {customer.name}! We're sending your order details to WhatsApp. 📱</p>
+                    <Link href="/track"
+                      className="mt-2 flex items-center gap-2 bg-brand-blue text-white font-black px-6 py-3 rounded-xl hover:opacity-90 transition-opacity">
+                      <ExternalLink size={16} /> Track My Order
+                    </Link>
                   </div>
                 )}
 
